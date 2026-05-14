@@ -1,59 +1,68 @@
+require './lib/player'
+require './lib/display'
+require './lib/saves'
+
 class Game
-  attr_accessor :secret_word, :display_word
+  include Display
+  include Saves
+
+  attr_accessor :secret_word, :current_status, :player
 
   def initialize()
-    @wrong_guesses = 0
     @word_guessed = false
-    @guesses = []
+    self.player = Player.new
   end
 
   def generate_secret_word
     words = File.readlines(FILENAME, chomp: true).select{ |w| w.length.between?(5,12) }
     self.secret_word = words[rand(0..words.length)].upcase.split('')
-    self.display_word = secret_word.map {|i| '_'}
-  end
-
-  def get_user_choice
-    loop do
-      print "Enter your guess(single character): "
-      c = gets.chomp.upcase
-      if @guesses.include?(c)
-        puts "#{c.upcase} was already guessed. Try another character"
-        next
-      end
-      return c if c.length == 1 && c.match(/[A-Z]/)
-    end
+    player.current_status = secret_word.map {|i| '_'}
   end
 
   def check_against_secret?(c)
     matching_indices = secret_word.each_index.select { |i| secret_word[i] == c}
     matching_indices.each do |i|
-      display_word[i] = c
+      player.current_status[i] = c
     end
-    @wrong_guesses += 1 if matching_indices.empty? 
-    return true if display_word == secret_word
+    player.wrong_guesses += 1 if matching_indices.empty? 
+    return true if player.current_status == secret_word
     
     false
   end
 
   def is_game_over?
-    @wrong_guesses == WRONG_MAX || @word_guessed
+    player.wrong_guesses == WRONG_MAX || @word_guessed
+  end
+
+  def play_round
+    c = get_user_input("Enter your guess(single character):")
+    player.guesses << c
+    @word_guessed = check_against_secret?(c)
+    display_current_status
+    @game_over = is_game_over?
+    return if @game_over
+    @save_game = user_chose_save? 
+    save_game if @save_game
+  end
+
+  def start_game
+    @save_game = false
+    @game_over = false
+    display_current_status
+    until @game_over
+      play_round
+      
+    end
+    game_end_msg
   end
 
   def play
-    generate_secret_word
-    until is_game_over?
-      puts "Lives: #{WRONG_MAX - @wrong_guesses}"
-      puts @display_word.join(' ')
-      c = get_user_choice
-      @guesses << c
-      @word_guessed = check_against_secret?(c)
-    end
-
-    if @wrong_guesses < WRONG_MAX
-      puts "You won!!"
+    if load_or_new == 'Y'
+      game_loaded = load_savepoint
     else
-      puts "Sorry you lost!! The word was #{secret_word.join()}"
+      generate_secret_word
+      game_loaded = true
     end
+    start_game if game_loaded
   end
 end
